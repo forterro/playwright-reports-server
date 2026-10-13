@@ -1,0 +1,164 @@
+suite: deployment
+templates:
+  - deployment.yaml
+  - secret.yaml
+set:
+  auth.apiToken: token
+  auth.authSecret: secret
+tests:
+  - it: runs a single replica with the Recreate strategy (SQLite)
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: defaults the image tag to v<appVersion>
+    template: deployment.yaml
+    chart:
+      appVersion: 6.1.1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/cyborgtests/playwright-reports-server:v6.1.1
+
+  - it: reads API_TOKEN and AUTH_SECRET from the chart Secret, never inline
+    template: deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-playwright-reports-server-auth
+                key: API_TOKEN
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: API_TOKEN
+            value: token
+
+  - it: uses an existing auth Secret and creates none
+    set:
+      auth.existingSecret: my-auth
+      auth.apiToken: ""
+      auth.authSecret: ""
+    asserts:
+      - template: secret.yaml
+        hasDocuments:
+          count: 0
+      - template: deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: AUTH_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-auth
+                key: AUTH_SECRET
+
+  - it: refuses auth without a Secret or values
+    template: deployment.yaml
+    set:
+      auth.apiToken: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: auth.enabled needs auth.existingSecret, or both auth.apiToken and auth.authSecret
+
+  - it: open mode sets no API_TOKEN
+    template: deployment.yaml
+    set:
+      auth.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: API_TOKEN
+          any: true
+
+  - it: fs storage mounts the data claim
+    template: deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-playwright-reports-server-data
+
+  - it: s3 storage wires the bucket from a Secret and uses a scratch volume
+    template: deployment.yaml
+    set:
+      storage.type: s3
+      storage.s3.endpoint: s3.example.com
+      storage.s3.bucket: reports
+      storage.s3.existingSecret: s3-creds
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S3_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: s3-creds
+                key: S3_SECRET_KEY
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S3_BUCKET
+            value: reports
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir:
+              sizeLimit: 5Gi
+
+  - it: s3 storage requires an endpoint and a credentials Secret
+    template: deployment.yaml
+    set:
+      storage.type: s3
+    asserts:
+      - failedTemplate:
+          errorMessage: storage.s3.endpoint is required with storage.type=s3
+
+  - it: rejects an unknown storage type (values schema)
+    template: deployment.yaml
+    set:
+      storage.type: azure
+    asserts:
+      - failedTemplate:
+          errorPattern: "storage/type.*must be one of"
+
+  - it: runs non-root with a read-only root filesystem and writable data/tmp volumes
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1001
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: break-glass admin only when its Secret is given
+    template: deployment.yaml
+    set:
+      auth.root.existingSecret: root
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: root
+                key: ROOT_PASSWORD

@@ -1,0 +1,60 @@
+suite: storage, service and ingress
+set:
+  auth.apiToken: token
+  auth.authSecret: secret
+tests:
+  - it: creates the data claim for fs storage
+    template: pvc.yaml
+    asserts:
+      - equal:
+          path: spec.resources.requests.storage
+          value: 10Gi
+
+  - it: creates no claim with an existing claim
+    template: pvc.yaml
+    set:
+      storage.fs.persistence.existingClaim: mine
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates no claim with s3 storage
+    template: pvc.yaml
+    set:
+      storage.type: s3
+      storage.s3.endpoint: s3.example.com
+      storage.s3.existingSecret: s3-creds
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: exposes port 3001 through the Service
+    template: service.yaml
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 3001
+
+  - it: creates no Ingress by default
+    template: ingress.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: routes the Ingress hosts to the Service
+    template: ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.className: traefik
+      ingress.hosts:
+        - host: reports.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: reports.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-playwright-reports-server
