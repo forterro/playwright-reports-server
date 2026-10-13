@@ -26,6 +26,8 @@ concurrency:
 
 env:
   CHART_DIR: charts/playwright-reports-server
+  HELM_VERSION: v4.3.0
+  HELM_UNITTEST_VERSION: v1.2.1
 
 jobs:
   test:
@@ -33,7 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
       - name: Lint
         run: |
           helm lint "$CHART_DIR" --set auth.apiToken=x --set auth.authSecret=y
@@ -41,7 +45,8 @@ jobs:
             --set storage.type=s3 --set storage.s3.endpoint=s3.example.com --set storage.s3.existingSecret=s3
       - name: Unit tests (helm-unittest)
         run: |
-          helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3 >/dev/null
+          helm plugin install https://github.com/helm-unittest/helm-unittest \
+            --version "$HELM_UNITTEST_VERSION" --verify=false >/dev/null
           helm unittest "$CHART_DIR"
       - name: Render and validate against the Kubernetes schemas
         run: |
@@ -67,7 +72,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
       - name: Check the tag matches Chart.yaml
         id: prep
         run: |
