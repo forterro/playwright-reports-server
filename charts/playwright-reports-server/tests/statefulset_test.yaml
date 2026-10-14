@@ -197,6 +197,15 @@ tests:
             name: tmp
             mountPath: /tmp
 
+  - it: keeps the npm cache on the writable /tmp (report generation installs Playwright)
+    template: statefulset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: npm_config_cache
+            value: /tmp/.npm
+
   - it: break-glass admin only when its Secret is given
     template: statefulset.yaml
     set:
