@@ -22,7 +22,8 @@ kubectl create secret generic reports-auth \
 
 ## Storage
 
-- `fs` (default): reports and the SQLite metadata live on a PersistentVolumeClaim.
+- `fs` (default): reports and the SQLite metadata live on a PersistentVolumeClaim created
+  from the StatefulSet `volumeClaimTemplates` (or `storage.fs.persistence.existingClaim`).
 - `s3`: reports go to an S3-compatible bucket (pre-created); Litestream replicates the
   SQLite metadata to the same bucket, so the pod keeps only a scratch volume and can be
   recreated at any time. Credentials come from an existing Secret:
@@ -36,7 +37,9 @@ storage:
     existingSecret: reports-s3   # keys S3_ACCESS_KEY, S3_SECRET_KEY
 ```
 
-The server always runs one replica (Recreate strategy): SQLite has a single writer.
+The server runs as a single-replica StatefulSet: SQLite has a single writer, and the
+StatefulSet never starts the new pod before the old one is gone. The claim template is
+immutable: to grow the volume, resize the PVC itself (`data-<fullname>-0`).
 
 ## Single sign-on
 
@@ -92,11 +95,12 @@ Kubernetes: `>=1.25.0-0`
 | serviceAccount.create | bool | `true` | Create a ServiceAccount. |
 | serviceAccount.name | string | `""` | ServiceAccount name (generated when empty). |
 | startupProbe | object | `{"failureThreshold":60,"httpGet":{"path":"/api/ping","port":"http"},"periodSeconds":5}` | Startup probe (first start may replay the Litestream replica). |
-| storage.fs.persistence.accessModes | list | `["ReadWriteOnce"]` | Access modes of the created claim. |
-| storage.fs.persistence.enabled | bool | `true` | Persist `/app/data` on a PersistentVolumeClaim (fs storage). |
-| storage.fs.persistence.existingClaim | string | `""` | Use an existing claim instead of creating one. |
-| storage.fs.persistence.size | string | `"10Gi"` | Size of the created claim. |
-| storage.fs.persistence.storageClass | string | `""` | Storage class of the created claim ("" = cluster default). |
+| storage.fs.persistence.accessModes | list | `["ReadWriteOnce"]` | Access modes of the claim template. Immutable once installed. |
+| storage.fs.persistence.annotations | object | `{}` | Annotations of the claim template. |
+| storage.fs.persistence.enabled | bool | `true` | Persist `/app/data` on a PersistentVolumeClaim (fs storage), created from the StatefulSet `volumeClaimTemplates`. |
+| storage.fs.persistence.existingClaim | string | `""` | Use an existing claim instead of the claim template. |
+| storage.fs.persistence.size | string | `"10Gi"` | Size of the claim template. Immutable once installed (resize the PVC itself). |
+| storage.fs.persistence.storageClass | string | `""` | Storage class of the claim template ("" = cluster default). Immutable once installed. |
 | storage.s3.accessKeyKey | string | `"S3_ACCESS_KEY"` | Key of the access key in the Secret. |
 | storage.s3.bucket | string | `"playwright-reports-server"` | Bucket (pre-created). |
 | storage.s3.endpoint | string | `""` | S3 endpoint, hostname only (no scheme). |

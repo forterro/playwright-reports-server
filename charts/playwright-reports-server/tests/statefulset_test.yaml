@@ -1,23 +1,25 @@
-suite: deployment
+suite: statefulset
 templates:
-  - deployment.yaml
+  - statefulset.yaml
   - secret.yaml
 set:
   auth.apiToken: token
   auth.authSecret: secret
 tests:
-  - it: runs a single replica with the Recreate strategy (SQLite)
-    template: deployment.yaml
+  - it: runs a single-replica StatefulSet governed by the headless Service (SQLite)
+    template: statefulset.yaml
     asserts:
+      - isKind:
+          of: StatefulSet
       - equal:
           path: spec.replicas
           value: 1
       - equal:
-          path: spec.strategy.type
-          value: Recreate
+          path: spec.serviceName
+          value: RELEASE-NAME-playwright-reports-server-headless
 
   - it: defaults the image tag to v<appVersion>
-    template: deployment.yaml
+    template: statefulset.yaml
     chart:
       appVersion: 6.1.1
     asserts:
@@ -26,7 +28,7 @@ tests:
           value: ghcr.io/cyborgtests/playwright-reports-server:v6.1.1
 
   - it: reads API_TOKEN and AUTH_SECRET from the chart Secret, never inline
-    template: deployment.yaml
+    template: statefulset.yaml
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -51,7 +53,7 @@ tests:
       - template: secret.yaml
         hasDocuments:
           count: 0
-      - template: deployment.yaml
+      - template: statefulset.yaml
         contains:
           path: spec.template.spec.containers[0].env
           content:
@@ -62,7 +64,7 @@ tests:
                 key: AUTH_SECRET
 
   - it: refuses auth without a Secret or values
-    template: deployment.yaml
+    template: statefulset.yaml
     set:
       auth.apiToken: ""
     asserts:
@@ -70,7 +72,7 @@ tests:
           errorMessage: auth.enabled needs auth.existingSecret, or both auth.apiToken and auth.authSecret
 
   - it: open mode sets no API_TOKEN
-    template: deployment.yaml
+    template: statefulset.yaml
     set:
       auth.enabled: false
     asserts:
@@ -80,18 +82,62 @@ tests:
             name: API_TOKEN
           any: true
 
-  - it: fs storage mounts the data claim
-    template: deployment.yaml
+  - it: fs storage gets /app/data from the claim template
+    template: statefulset.yaml
+    set:
+      storage.fs.persistence.size: 20Gi
+      storage.fs.persistence.storageClass: fast
     asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.name
+          value: data
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+          value: 20Gi
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.storageClassName
+          value: fast
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /app/data
+
+  - it: fs storage on an existing claim has no claim template
+    template: statefulset.yaml
+    set:
+      storage.fs.persistence.existingClaim: mine
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
       - contains:
           path: spec.template.spec.volumes
           content:
             name: data
             persistentVolumeClaim:
-              claimName: RELEASE-NAME-playwright-reports-server-data
+              claimName: mine
+
+  - it: fs storage without persistence falls back to a scratch volume
+    template: statefulset.yaml
+    set:
+      storage.fs.persistence.enabled: false
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir:
+              sizeLimit: 5Gi
 
   - it: s3 storage wires the bucket from a Secret and uses a scratch volume
-    template: deployment.yaml
+    template: statefulset.yaml
     set:
       storage.type: s3
       storage.s3.endpoint: s3.example.com
@@ -111,6 +157,8 @@ tests:
           content:
             name: S3_BUCKET
             value: reports
+      - notExists:
+          path: spec.volumeClaimTemplates
       - contains:
           path: spec.template.spec.volumes
           content:
@@ -119,7 +167,7 @@ tests:
               sizeLimit: 5Gi
 
   - it: s3 storage requires an endpoint and a credentials Secret
-    template: deployment.yaml
+    template: statefulset.yaml
     set:
       storage.type: s3
     asserts:
@@ -127,7 +175,7 @@ tests:
           errorMessage: storage.s3.endpoint is required with storage.type=s3
 
   - it: rejects an unknown storage type (values schema)
-    template: deployment.yaml
+    template: statefulset.yaml
     set:
       storage.type: azure
     asserts:
@@ -135,7 +183,7 @@ tests:
           errorPattern: "storage/type.*must be one of"
 
   - it: runs non-root with a read-only root filesystem and writable data/tmp volumes
-    template: deployment.yaml
+    template: statefulset.yaml
     asserts:
       - equal:
           path: spec.template.spec.securityContext.runAsUser
@@ -150,7 +198,7 @@ tests:
             mountPath: /tmp
 
   - it: break-glass admin only when its Secret is given
-    template: deployment.yaml
+    template: statefulset.yaml
     set:
       auth.root.existingSecret: root
     asserts:

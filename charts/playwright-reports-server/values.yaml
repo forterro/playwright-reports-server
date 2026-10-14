@@ -14,9 +14,9 @@ image:
 # -- Image pull secrets.
 imagePullSecrets: []
 
-# The server keeps its metadata in SQLite: it runs as a single replica
-# (Recreate strategy). With `storage.type: s3` Litestream replicates the
-# database to the bucket, so the pod is disposable.
+# The server keeps its metadata in SQLite: it runs as a single-replica
+# StatefulSet. With `storage.type: s3` Litestream replicates the database
+# to the bucket, so the pod only needs a scratch volume.
 
 auth:
   # -- Turn authentication on (sets `API_TOKEN`). Off = open mode, everyone is an admin.
@@ -48,17 +48,19 @@ storage:
   type: fs
   fs:
     persistence:
-      # -- Persist `/app/data` on a PersistentVolumeClaim (fs storage).
+      # -- Persist `/app/data` on a PersistentVolumeClaim (fs storage), created from the StatefulSet `volumeClaimTemplates`.
       enabled: true
-      # -- Use an existing claim instead of creating one.
+      # -- Use an existing claim instead of the claim template.
       existingClaim: ""
-      # -- Storage class of the created claim ("" = cluster default).
+      # -- Storage class of the claim template ("" = cluster default). Immutable once installed.
       storageClass: ""
-      # -- Access modes of the created claim.
+      # -- Access modes of the claim template. Immutable once installed.
       accessModes:
         - ReadWriteOnce
-      # -- Size of the created claim.
+      # -- Size of the claim template. Immutable once installed (resize the PVC itself).
       size: 10Gi
+      # -- Annotations of the claim template.
+      annotations: {}
   s3:
     # -- S3 endpoint, hostname only (no scheme).
     endpoint: ""

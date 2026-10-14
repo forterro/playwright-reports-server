@@ -44,8 +44,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- .Values.auth.existingSecret | default (printf "%s-auth" (include "prs.fullname" .)) }}
 {{- end }}
 
-{{- define "prs.dataClaimName" -}}
-{{- .Values.storage.fs.persistence.existingClaim | default (printf "%s-data" (include "prs.fullname" .)) }}
+{{/* Non-empty when /app/data comes from the StatefulSet volumeClaimTemplates. */}}
+{{- define "prs.dataClaimTemplate" -}}
+{{- $p := .Values.storage.fs.persistence }}
+{{- if and (eq .Values.storage.type "fs") $p.enabled (not $p.existingClaim) }}true{{ end }}
 {{- end }}
 
 {{- define "prs.validate" -}}

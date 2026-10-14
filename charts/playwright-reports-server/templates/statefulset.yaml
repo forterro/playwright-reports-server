@@ -1,15 +1,16 @@
 {{- include "prs.validate" . }}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "prs.fullname" . }}
   labels:
     {{- include "prs.labels" . | nindent 4 }}
 spec:
-  # SQLite metadata: one replica, never two at once.
+  # SQLite metadata: a single writer, never two pods at once.
   replicas: 1
-  strategy:
-    type: Recreate
+  serviceName: {{ include "prs.fullname" . }}-headless
+  updateStrategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       {{- include "prs.selectorLabels" . | nindent 6 }}
@@ -144,14 +145,16 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
+        {{- if not (include "prs.dataClaimTemplate" .) }}
         - name: data
           {{- if and (eq .Values.storage.type "fs") .Values.storage.fs.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "prs.dataClaimName" . }}
+            claimName: {{ .Values.storage.fs.persistence.existingClaim }}
           {{- else }}
           emptyDir:
             sizeLimit: {{ .Values.storage.scratchSize }}
           {{- end }}
+        {{- end }}
         - name: app-tmp
           emptyDir: {}
         - name: tmp
@@ -168,3 +171,25 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+  {{- if include "prs.dataClaimTemplate" . }}
+  {{- with .Values.storage.fs.persistence }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "prs.selectorLabels" $ | nindent 10 }}
+        {{- with .annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .accessModes | nindent 10 }}
+        {{- with .storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .size }}
+  {{- end }}
+  {{- end }}

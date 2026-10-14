@@ -13,3 +13,21 @@ spec:
       name: http
   selector:
     {{- include "prs.selectorLabels" . | nindent 4 }}
+---
+# Governing Service of the StatefulSet (stable pod DNS).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "prs.fullname" . }}-headless
+  labels:
+    {{- include "prs.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 3001
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "prs.selectorLabels" . | nindent 4 }}

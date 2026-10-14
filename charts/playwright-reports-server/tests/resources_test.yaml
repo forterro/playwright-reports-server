@@ -1,39 +1,26 @@
-suite: storage, service and ingress
+suite: services and ingress
 set:
   auth.apiToken: token
   auth.authSecret: secret
 tests:
-  - it: creates the data claim for fs storage
-    template: pvc.yaml
-    asserts:
-      - equal:
-          path: spec.resources.requests.storage
-          value: 10Gi
-
-  - it: creates no claim with an existing claim
-    template: pvc.yaml
-    set:
-      storage.fs.persistence.existingClaim: mine
-    asserts:
-      - hasDocuments:
-          count: 0
-
-  - it: creates no claim with s3 storage
-    template: pvc.yaml
-    set:
-      storage.type: s3
-      storage.s3.endpoint: s3.example.com
-      storage.s3.existingSecret: s3-creds
-    asserts:
-      - hasDocuments:
-          count: 0
-
   - it: exposes port 3001 through the Service
     template: service.yaml
+    documentIndex: 0
     asserts:
       - equal:
           path: spec.ports[0].port
           value: 3001
+
+  - it: creates the headless governing Service of the StatefulSet
+    template: service.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-playwright-reports-server-headless
+      - equal:
+          path: spec.clusterIP
+          value: None
 
   - it: creates no Ingress by default
     template: ingress.yaml

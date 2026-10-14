@@ -55,7 +55,8 @@
                 "existingClaim": { "type": "string" },
                 "storageClass": { "type": "string" },
                 "accessModes": { "type": "array", "items": { "type": "string" } },
-                "size": { "type": "string" }
+                "size": { "type": "string" },
+                "annotations": { "type": "object" }
               }
             }
           }
